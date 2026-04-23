@@ -706,7 +706,7 @@ export default function App() {
         <section className="mt-6">
           <details className="panel rounded-[2rem] border border-white/70 p-6 shadow-panel">
             <summary className="cursor-pointer text-lg font-semibold text-tamu-maroon">
-              Refine search with filters or research lanes
+              Refine search with filters
             </summary>
             <p className="mt-2 text-sm leading-6 text-tamu-slate">{queryCoach}</p>
 
