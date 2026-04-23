@@ -825,8 +825,8 @@ export default function App() {
             <div className="panel rounded-[2rem] border border-white/70 px-6 py-10 shadow-panel">
               <h2 className="display-serif text-3xl text-tamu-maroon">Start with a direction</h2>
               <p className="mt-3 max-w-3xl text-tamu-slate">
-                Try describing what you care about in everyday language. Something like `I’m into machine learning and
-                health` is enough to get going.
+                Tell us what you are interested in. Something like `I’m into machine learning and health` is enough to
+                get going.
               </p>
             </div>
           ) : null}
