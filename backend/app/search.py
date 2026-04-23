@@ -1,13 +1,107 @@
 import json
+import os
 import re
 from dataclasses import dataclass
 from typing import Any, Optional
+
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
 
 import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
 from .config import EMBEDDINGS_PATH, FAISS_INDEX_PATH, INDEX_METADATA_PATH, MODEL_NAME
+
+QUERY_FILLER_PHRASES = [
+    "what course would help me",
+    "what courses would help me",
+    "what course should i take",
+    "what courses should i take",
+    "can you recommend",
+    "could you recommend",
+    "please recommend",
+    "recommend me",
+    "i am interested in",
+    "i'm interested in",
+    "i want to work on",
+    "i want to learn about",
+    "i would like to learn",
+    "i like",
+    "courses related to",
+    "course related to",
+    "classes related to",
+    "class related to",
+    "help me find",
+    "for me",
+]
+
+QUERY_STOPWORDS = {
+    "a",
+    "about",
+    "an",
+    "and",
+    "are",
+    "class",
+    "classes",
+    "course",
+    "courses",
+    "for",
+    "find",
+    "help",
+    "helpful",
+    "i",
+    "in",
+    "into",
+    "is",
+    "like",
+    "me",
+    "my",
+    "of",
+    "on",
+    "please",
+    "recommend",
+    "related",
+    "should",
+    "take",
+    "that",
+    "the",
+    "to",
+    "want",
+    "what",
+    "which",
+    "with",
+    "work",
+    "would",
+}
+
+DOMAIN_EXPANSIONS = {
+    "ai": "artificial intelligence machine learning deep learning",
+    "analytics": "data analytics data mining statistical modeling",
+    "biology": "computational biology bioinformatics genomics biomedical",
+    "biomedical": "healthcare medicine clinical health bioinformatics",
+    "cloud": "distributed systems cloud computing scalable systems",
+    "cybersecurity": "security privacy cryptography network security",
+    "data": "data science data mining analytics databases",
+    "genomics": "computational biology bioinformatics genetics biomedical",
+    "health": "healthcare biomedical medicine clinical public health health informatics",
+    "healthcare": "health biomedical medicine clinical public health health informatics",
+    "machine": "machine learning artificial intelligence data mining",
+    "medicine": "healthcare biomedical clinical public health",
+    "privacy": "privacy security cybersecurity data protection",
+    "robotics": "robotics autonomous systems intelligent systems control",
+    "security": "cybersecurity privacy cryptography network security",
+    "vision": "computer vision image processing deep learning",
+}
+
+PHRASE_EXPANSIONS = {
+    "machine learning": "machine learning artificial intelligence deep learning data mining",
+    "public health": "public health healthcare health informatics epidemiology",
+    "computer vision": "computer vision image processing visual recognition deep learning",
+    "data science": "data science data mining analytics machine learning",
+}
 
 
 def infer_department(code: str) -> str:
@@ -20,6 +114,32 @@ def parse_credit_value(credits: Optional[str]) -> Optional[float]:
         return None
     match = re.search(r"(\d+(?:\.\d+)?)", credits)
     return float(match.group(1)) if match else None
+
+
+def query_terms(query: str) -> list[str]:
+    terms = re.findall(r"[A-Za-z0-9]+", query.lower())
+    return [term for term in terms if len(term) > 2 and term not in QUERY_STOPWORDS]
+
+
+def normalize_query(query: str) -> str:
+    normalized = query.lower()
+    normalized = re.sub(r"[?.!,;:]", " ", normalized)
+
+    for phrase in QUERY_FILLER_PHRASES:
+        normalized = re.sub(rf"\b{re.escape(phrase)}\b", " ", normalized)
+
+    expansions: list[str] = []
+    for phrase, expansion in PHRASE_EXPANSIONS.items():
+        if re.search(rf"\b{re.escape(phrase)}\b", normalized):
+            expansions.append(expansion)
+
+    terms = query_terms(normalized)
+    for term in terms:
+        if term in DOMAIN_EXPANSIONS:
+            expansions.append(DOMAIN_EXPANSIONS[term])
+
+    cleaned = " ".join(terms + expansions)
+    return cleaned or query
 
 
 @dataclass
@@ -53,7 +173,8 @@ class SemanticSearchService:
         max_credits: Optional[float] = None,
     ) -> dict[str, Any]:
         artifacts = self.load()
-        query_embedding = artifacts.model.encode([query], convert_to_numpy=True, normalize_embeddings=True)
+        search_query = normalize_query(query)
+        query_embedding = artifacts.model.encode([search_query], convert_to_numpy=True, normalize_embeddings=True)
 
         # Search a wider candidate pool first so filters do not starve the result set.
         search_k = min(max(top_k * 5, 25), len(artifacts.metadata))
@@ -61,7 +182,7 @@ class SemanticSearchService:
 
         normalized_department = department.upper() if department else None
         candidates: list[dict[str, Any]] = []
-        query_terms = [term for term in re.findall(r"[A-Za-z0-9]+", query.lower()) if len(term) > 2]
+        meaningful_query_terms = query_terms(search_query)
 
         for score, idx in zip(scores[0], indices[0]):
             if idx < 0:
@@ -78,10 +199,10 @@ class SemanticSearchService:
                 continue
 
             combined_text = f"{item.get('title', '')} {item.get('description', '')}".lower()
-            keyword_overlap = sum(term in combined_text for term in query_terms)
+            keyword_overlap = sum(term in combined_text for term in meaningful_query_terms)
             blended_score = float(score)
-            if query_terms:
-                blended_score += min(keyword_overlap / max(len(query_terms), 1), 1.0) * 0.08
+            if meaningful_query_terms:
+                blended_score += min(keyword_overlap / max(len(meaningful_query_terms), 1), 1.0) * 0.08
 
             item.update(
                 {

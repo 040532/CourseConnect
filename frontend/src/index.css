@@ -42,8 +42,8 @@ body {
 
 .hero-panel {
   background:
-    radial-gradient(circle at top right, rgba(214, 179, 95, 0.26), transparent 18rem),
-    linear-gradient(135deg, #500000 0%, #6a0f12 55%, #7b1f24 100%);
+    radial-gradient(circle at top right, rgba(214, 179, 95, 0.18), transparent 18rem),
+    linear-gradient(135deg, #500000 0%, #500000 58%, #3b0000 100%);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 

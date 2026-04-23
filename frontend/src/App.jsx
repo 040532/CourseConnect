@@ -4,22 +4,50 @@ import autoTable from "jspdf-autotable";
 
 const API_BASE = "http://localhost:8000";
 const SUGGESTED_QUERIES = [
-  "deep learning for computer vision",
-  "distributed cloud systems",
-  "privacy in machine learning",
-  "robotics and spatial intelligence",
-  "cybersecurity data analytics",
-  "computational biology and genomics",
+  "I like machine learning and health. What courses would help me?",
+  "I want to work on robotics and AI.",
+  "I am interested in privacy, data, and medicine.",
+  "What should I take for cloud systems and scalability?",
+  "I like biology, genomics, and data science.",
+  "Recommend courses for cybersecurity and analytics.",
 ];
 
+const PRIMARY_SUGGESTIONS = SUGGESTED_QUERIES.slice(0, 3);
+
 const RESEARCH_LANES = [
-  { label: "AI + Vision", query: "deep learning for computer vision" },
-  { label: "Secure Systems", query: "security in distributed systems" },
-  { label: "Cloud + Scale", query: "distributed cloud systems" },
-  { label: "Robotics", query: "robotics and spatial intelligence" },
-  { label: "Data + Health", query: "machine learning for healthcare" },
-  { label: "Theory + Optimization", query: "optimization for machine learning" },
+  { label: "AI + Vision", query: "I want to learn deep learning for computer vision." },
+  { label: "Secure Systems", query: "I am interested in security for distributed systems." },
+  { label: "Cloud + Scale", query: "What courses help with distributed cloud systems?" },
+  { label: "Robotics", query: "I want to work on robotics and spatial intelligence." },
+  { label: "Data + Health", query: "I like machine learning and healthcare." },
+  { label: "Theory + Optimization", query: "I want optimization courses for machine learning." },
 ];
+
+const QUERY_STOPWORDS = new Set([
+  "about",
+  "and",
+  "class",
+  "classes",
+  "course",
+  "courses",
+  "find",
+  "for",
+  "help",
+  "helpful",
+  "interested",
+  "like",
+  "learn",
+  "recommend",
+  "related",
+  "should",
+  "take",
+  "want",
+  "what",
+  "which",
+  "with",
+  "work",
+  "would",
+]);
 
 const initialFilters = {
   department: "",
@@ -41,7 +69,9 @@ function scoreLabel(score) {
 }
 
 function extractTerms(query) {
-  return [...new Set(query.toLowerCase().match(/[a-z0-9]+/g) || [])].filter((term) => term.length > 2);
+  return [...new Set(query.toLowerCase().match(/[a-z0-9]+/g) || [])].filter(
+    (term) => term.length > 2 && !QUERY_STOPWORDS.has(term),
+  );
 }
 
 function highlightText(text, query) {
@@ -69,6 +99,22 @@ function parseCredits(credits) {
   return Number.isFinite(value) ? value : null;
 }
 
+function getComparisonReason(course, query) {
+  const terms = extractTerms(query);
+  const combinedText = `${course.title || ""} ${course.description || ""} ${course.prerequisites || ""}`.toLowerCase();
+  const matchedTerms = terms.filter((term) => combinedText.includes(term));
+
+  if (matchedTerms.length) {
+    return `Matches ${matchedTerms.slice(0, 3).join(", ")} in the course text.`;
+  }
+
+  if (course.prerequisites?.trim()) {
+    return "A more structured option if you want something with prerequisites.";
+  }
+
+  return "A flexible option that stays close to the topic.";
+}
+
 function getReadinessBadge(prerequisites) {
   const normalized = (prerequisites || "").trim();
   if (!normalized) {
@@ -83,12 +129,12 @@ function getReadinessBadge(prerequisites) {
 function buildQueryCoach(query) {
   const terms = extractTerms(query);
   if (!terms.length) {
-    return "Try describing a problem area, method, or application domain rather than a single keyword.";
+    return "Try a full sentence about your interests, goals, methods, or application area.";
   }
   if (terms.length < 3) {
-    return "Add one more detail such as an application area, method, or systems context to improve semantic ranking.";
+    return "Add one more detail such as a method, career goal, research area, or domain like health, robotics, or security.";
   }
-  return "Your query has strong intent signals. Use the filter button to narrow by department or credit load when needed.";
+  return "Your query has useful intent signals. CourseConnect will clean filler words and expand domain language before ranking.";
 }
 
 function summarizeFilters(filters) {
@@ -476,11 +522,13 @@ export default function App() {
   const [appliedFilters, setAppliedFilters] = useState(initialFilters);
   const [history, setHistory] = useState([]);
   const [savedCourses, setSavedCourses] = useState([]);
+  const [compareCodes, setCompareCodes] = useState([]);
   const [lastQuery, setLastQuery] = useState("");
 
   useEffect(() => {
     setHistory(JSON.parse(window.localStorage.getItem("courseconnect-history") || "[]"));
     setSavedCourses(JSON.parse(window.localStorage.getItem("courseconnect-saved") || "[]"));
+    setCompareCodes(JSON.parse(window.localStorage.getItem("courseconnect-compare") || "[]"));
   }, []);
 
   useEffect(() => {
@@ -491,27 +539,21 @@ export default function App() {
     window.localStorage.setItem("courseconnect-saved", JSON.stringify(savedCourses));
   }, [savedCourses]);
 
+  useEffect(() => {
+    window.localStorage.setItem("courseconnect-compare", JSON.stringify(compareCodes));
+  }, [compareCodes]);
+
+  useEffect(() => {
+    setCompareCodes((current) => current.filter((code) => savedCourses.some((course) => course.code === code)));
+  }, [savedCourses]);
+
   const savedCodes = useMemo(() => new Set(savedCourses.map((course) => course.code)), [savedCourses]);
-  const topResult = results[0] || null;
-  const activeQueryTerms = useMemo(() => extractTerms(lastQuery || query), [lastQuery, query]);
+  const compareSet = useMemo(() => new Set(compareCodes), [compareCodes]);
+  const compareCourses = useMemo(
+    () => compareCodes.map((code) => savedCourses.find((course) => course.code === code)).filter(Boolean),
+    [compareCodes, savedCourses],
+  );
   const queryCoach = useMemo(() => buildQueryCoach(query || lastQuery), [query, lastQuery]);
-
-  const insightStats = useMemo(() => {
-    const departments = [...new Set(results.map((item) => item.department))];
-    const averageScore =
-      results.length > 0 ? (results.reduce((sum, item) => sum + item.score, 0) / results.length).toFixed(1) : "0.0";
-    const creditValues = results.map((item) => parseCredits(item.credits)).filter((value) => value !== null);
-    const averageCredits = creditValues.length
-      ? (creditValues.reduce((sum, value) => sum + value, 0) / creditValues.length).toFixed(1)
-      : "0.0";
-
-    return {
-      departments: departments.length,
-      averageScore,
-      averageCredits,
-      strongestDepartment: departments[0] || "None yet",
-    };
-  }, [results]);
 
   async function runSearch(nextQuery = query, filterSource = appliedFilters) {
     const trimmedQuery = nextQuery.trim();
@@ -576,6 +618,24 @@ export default function App() {
     );
   }
 
+  function toggleCompareCourse(course) {
+    setCompareCodes((current) => {
+      if (current.includes(course.code)) {
+        return current.filter((code) => code !== course.code);
+      }
+
+      if (current.length >= 3) {
+        return current;
+      }
+
+      return [...current, course.code];
+    });
+  }
+
+  function clearComparison() {
+    setCompareCodes([]);
+  }
+
   function clearFilters() {
     setFilters(initialFilters);
     setAppliedFilters(initialFilters);
@@ -596,28 +656,13 @@ export default function App() {
   return (
     <div className="min-h-screen bg-tamu-page px-4 py-8 text-tamu-ink sm:px-6 lg:px-10">
       <div className="mx-auto max-w-7xl">
-        <div className="mb-6 rounded-full bg-tamu-maroon px-5 py-3 text-xs font-semibold uppercase tracking-[0.24em] text-white shadow-panel">
-          Texas A&M inspired semantic course discovery
-        </div>
-
-        <header className="grid gap-6 lg:grid-cols-[1.4fr_0.9fr]">
+        <header>
           <section className="hero-panel rounded-[2.25rem] p-8 shadow-panel sm:p-10">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="rounded-full bg-white/12 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-white">
-                Course project
-              </span>
-              <span className="rounded-full bg-tamu-gold px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-tamu-maroon">
-                Semantic retrieval
-              </span>
-            </div>
+            <div className="text-xs font-semibold uppercase tracking-[0.24em] text-tamu-gold">CourseConnect</div>
 
-            <h1 className="display-serif mt-6 max-w-4xl text-5xl leading-tight text-white sm:text-6xl">
-              CourseConnect helps TAMU students discover the right graduate courses faster.
+            <h1 className="display-serif mt-4 max-w-4xl text-4xl leading-tight text-white sm:text-5xl">
+              Tell CourseConnect what you’re into, and it will point you to courses worth looking at.
             </h1>
-            <p className="mt-5 max-w-3xl text-lg leading-8 text-white/82">
-              Search by research intent, not catalog guessing. Describe the problem space you care about and get ranked
-              graduate courses with meaningful relevance signals, prerequisites, and planning context.
-            </p>
 
             <form
               className="mt-8 rounded-[1.75rem] border border-white/10 bg-white/95 p-4 shadow-sm"
@@ -630,7 +675,7 @@ export default function App() {
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Try: deep learning for computer vision"
+                  placeholder="Try: I like machine learning and health. What courses would help me?"
                   className="min-h-14 flex-1 rounded-2xl border border-tamu-maroon/10 bg-tamu-cream px-5 text-base text-tamu-ink outline-none transition placeholder:text-tamu-slate/70 focus:border-tamu-maroon"
                 />
                 <button
@@ -641,8 +686,9 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-3">
-                {SUGGESTED_QUERIES.map((suggestion) => (
+              <p className="mt-4 text-sm font-medium text-tamu-slate">Try one of these:</p>
+              <div className="mt-3 flex flex-wrap gap-3">
+                {PRIMARY_SUGGESTIONS.map((suggestion) => (
                   <button
                     key={suggestion}
                     type="button"
@@ -655,22 +701,14 @@ export default function App() {
               </div>
             </form>
           </section>
-
-          <aside className="grid gap-4">
-            <StatCard label="Saved courses" value={savedCourses.length} note="Build a shortlist for advising or registration." />
-            <StatCard label="Active filters" value={summarizeFilters(appliedFilters)} note="Filters apply only when you click the button below." />
-            <StatCard label="Search coach" value="Intent-aware" note={queryCoach} />
-          </aside>
         </header>
 
-        <section className="mt-8 grid gap-4 lg:grid-cols-[1.05fr_1.2fr]">
-          <div className="panel rounded-[2rem] border border-white/70 p-6 shadow-panel">
-            <div className="flex items-center justify-between">
-              <h2 className="display-serif text-3xl text-tamu-maroon">Search filters</h2>
-              <button type="button" onClick={clearFilters} className="text-sm font-medium text-tamu-maroon">
-                Reset
-              </button>
-            </div>
+        <section className="mt-6">
+          <details className="panel rounded-[2rem] border border-white/70 p-6 shadow-panel">
+            <summary className="cursor-pointer text-lg font-semibold text-tamu-maroon">
+              Refine search with filters or research lanes
+            </summary>
+            <p className="mt-2 text-sm leading-6 text-tamu-slate">{queryCoach}</p>
 
             <div className="mt-6 grid gap-5 md:grid-cols-2">
               <div>
@@ -720,6 +758,9 @@ export default function App() {
               <div className="rounded-2xl border border-tamu-maroon/12 bg-tamu-cream px-4 py-3 text-sm text-tamu-slate">
                 {summarizeFilters(appliedFilters)}
               </div>
+              <button type="button" onClick={clearFilters} className="rounded-2xl px-4 py-3 text-sm font-medium text-tamu-maroon">
+                Reset filters
+              </button>
             </div>
 
             <div className="mt-6">
@@ -737,135 +778,202 @@ export default function App() {
                 ))}
               </div>
             </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-3">
-            <StatCard
-              label="Returned results"
-              value={results.length}
-              note={searchMeta?.message || (lastQuery ? `For "${lastQuery}"` : "Run a search to begin.")}
-            />
-            <StatCard label="Departments represented" value={insightStats.departments} note={`Top coverage: ${insightStats.strongestDepartment}`} />
-            <StatCard
-              label="Average match score"
-              value={`${insightStats.averageScore}%`}
-              note={
-                searchMeta?.applied_threshold
-                  ? `Threshold: ${searchMeta.applied_threshold}% | Average credits: ${insightStats.averageCredits}`
-                  : `Average credits: ${insightStats.averageCredits}`
-              }
-            />
-          </div>
+          </details>
         </section>
 
-        <main className="mt-8 grid gap-8 lg:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="space-y-5">
+        <section className="mt-8 space-y-5">
+          <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
             <div className="panel rounded-[2rem] border border-white/70 p-6 shadow-panel">
-              <h2 className="display-serif text-3xl text-tamu-maroon">Query strategy</h2>
-              <p className="mt-3 text-sm leading-6 text-tamu-slate">{queryCoach}</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {activeQueryTerms.length ? (
-                  activeQueryTerms.map((term) => (
-                    <span
-                      key={term}
-                      className="rounded-full bg-tamu-maroon/8 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-tamu-maroon"
-                    >
-                      {term}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-sm text-tamu-slate">Your query signals will appear here.</span>
-                )}
-              </div>
+              <h2 className="display-serif text-3xl text-tamu-maroon">Search, then skim the best matches</h2>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-tamu-slate">
+                Start with a sentence that sounds natural to you. Filters are optional, and saved courses are there if
+                you want to compare a few candidates later.
+              </p>
             </div>
 
             <div className="panel rounded-[2rem] border border-white/70 p-6 shadow-panel">
-              <h2 className="display-serif text-3xl text-tamu-maroon">Saved shortlist</h2>
-              <div className="mt-4 space-y-3">
-                {savedCourses.length ? (
-                  savedCourses.slice(0, 5).map((course) => (
-                    <div key={course.code} className="rounded-2xl bg-white/85 p-4">
-                      <div className="text-xs uppercase tracking-[0.16em] text-tamu-muted">{course.code}</div>
-                      <div className="mt-1 text-sm font-semibold text-tamu-ink">{course.title}</div>
-                      <div className="mt-2 text-xs text-tamu-slate">{course.department || "Graduate course"}</div>
+              <div className="text-xs uppercase tracking-[0.24em] text-tamu-muted">Saved courses</div>
+              <div className="mt-3 text-3xl font-semibold text-tamu-maroon">{savedCourses.length}</div>
+              <p className="mt-1 text-sm text-tamu-slate">Courses you have bookmarked for comparison.</p>
+            </div>
+          </div>
+
+          {searchMeta?.message && results.length > 0 && !loading && !error ? (
+            <div className="flex flex-col gap-4 rounded-3xl border border-tamu-maroon/15 bg-white/80 px-5 py-4 text-sm text-tamu-slate md:flex-row md:items-center md:justify-between">
+              <div>{searchMeta.message}</div>
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                className="rounded-2xl bg-tamu-maroon px-4 py-3 text-sm font-semibold text-white transition hover:bg-tamu-maroon-dark"
+              >
+                Download course list PDF
+              </button>
+            </div>
+          ) : null}
+
+          {error ? (
+            <div className="rounded-3xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">{error}</div>
+          ) : null}
+
+          {loading ? <LoadingState /> : null}
+
+          {!loading && !error && results.length === 0 && lastQuery ? (
+            <EmptyState query={lastQuery} onSuggestion={applySuggestion} />
+          ) : null}
+
+          {!loading && !lastQuery ? (
+            <div className="panel rounded-[2rem] border border-white/70 px-6 py-10 shadow-panel">
+              <h2 className="display-serif text-3xl text-tamu-maroon">Start with a direction</h2>
+              <p className="mt-3 max-w-3xl text-tamu-slate">
+                Try describing what you care about in everyday language. Something like `I’m into machine learning and
+                health` is enough to get going.
+              </p>
+            </div>
+          ) : null}
+
+          <div className="space-y-5">
+            {results.map((result) => (
+              <SearchResultCard
+                key={result.code}
+                result={result}
+                query={lastQuery}
+                isSaved={savedCodes.has(result.code)}
+                onToggleSave={toggleSavedCourse}
+              />
+            ))}
+          </div>
+
+          {history.length ? (
+            <div className="panel rounded-[2rem] border border-white/70 p-6 shadow-panel">
+              <div className="text-xs uppercase tracking-[0.24em] text-tamu-muted">Recent searches</div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {history.map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => applySuggestion(item)}
+                    className="rounded-full border border-tamu-maroon/12 bg-white px-3 py-2 text-xs text-tamu-slate transition hover:border-tamu-maroon hover:text-tamu-maroon"
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {savedCourses.length ? (
+            <div className="panel rounded-[2rem] border border-white/70 p-6 shadow-panel">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.24em] text-tamu-muted">Saved shortlist</div>
+                  <h2 className="display-serif text-3xl text-tamu-maroon">Compare saved courses</h2>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="text-sm text-tamu-slate">{compareCourses.length} selected</div>
+                  <button
+                    type="button"
+                    onClick={clearComparison}
+                    className="rounded-2xl border border-tamu-maroon/15 px-4 py-2 text-sm font-medium text-tamu-maroon transition hover:border-tamu-maroon"
+                  >
+                    Clear compare
+                  </button>
+                </div>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-tamu-slate">
+                Pick 2 or 3 saved courses to compare department, credits, prerequisites, and the reason each one matched.
+              </p>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {savedCourses.map((course) => {
+                  const isSelected = compareSet.has(course.code);
+                  const selectedStyle = isSelected ? "border-tamu-maroon ring-2 ring-tamu-maroon/15" : "border-white/70";
+
+                  return (
+                    <div key={course.code} className={`rounded-2xl bg-white/85 p-4 shadow-sm ${selectedStyle}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-xs uppercase tracking-[0.16em] text-tamu-muted">{course.code}</div>
+                          <div className="mt-1 text-sm font-semibold text-tamu-ink">{course.title}</div>
+                          <div className="mt-2 text-xs text-tamu-slate">{course.department || "Graduate course"}</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleCompareCourse(course)}
+                          disabled={!isSelected && compareCodes.length >= 3}
+                          className="rounded-full border border-tamu-maroon/15 px-3 py-2 text-xs font-semibold text-tamu-maroon transition hover:border-tamu-maroon disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {isSelected ? "In compare" : compareCodes.length >= 3 ? "Max 3" : "Compare"}
+                        </button>
+                      </div>
                     </div>
-                  ))
+                  );
+                })}
+              </div>
+
+              <div className="mt-6 overflow-x-auto rounded-3xl border border-white/70 bg-white/80">
+                {compareCourses.length >= 2 ? (
+                  <table className="min-w-[760px] w-full border-separate border-spacing-0 text-left">
+                    <thead>
+                      <tr>
+                        <th className="border-b border-white/70 bg-tamu-cream px-4 py-4 text-xs uppercase tracking-[0.18em] text-tamu-muted">
+                          Field
+                        </th>
+                        {compareCourses.map((course) => (
+                          <th
+                            key={course.code}
+                            className="border-b border-white/70 bg-tamu-cream px-4 py-4 text-left align-top"
+                          >
+                            <div className="text-xs uppercase tracking-[0.18em] text-tamu-muted">{course.code}</div>
+                            <div className="mt-1 text-sm font-semibold text-tamu-ink">{course.title}</div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        {
+                          label: "Department",
+                          value: (course) => course.department || "Graduate course",
+                        },
+                        {
+                          label: "Credits",
+                          value: (course) => course.credits || "N/A",
+                        },
+                        {
+                          label: "Prerequisites",
+                          value: (course) => course.prerequisites?.trim() || "None listed",
+                        },
+                        {
+                          label: "Match score",
+                          value: (course) => (Number.isFinite(course.score) ? `${course.score.toFixed(1)}%` : "N/A"),
+                        },
+                        {
+                          label: "Why it matched",
+                          value: (course) => getComparisonReason(course, lastQuery || query),
+                        },
+                      ].map((row, rowIndex) => (
+                        <tr key={row.label} className={rowIndex % 2 === 0 ? "bg-white/70" : "bg-tamu-cream/50"}>
+                          <td className="border-t border-white/70 px-4 py-4 text-sm font-semibold text-tamu-ink">
+                            {row.label}
+                          </td>
+                          {compareCourses.map((course) => (
+                            <td key={`${course.code}-${row.label}`} className="border-t border-white/70 px-4 py-4 text-sm leading-6 text-tamu-slate">
+                              {row.value(course)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 ) : (
-                  <p className="text-sm text-tamu-slate">Save courses to create a shortlist for comparison or advising.</p>
+                  <div className="px-6 py-8 text-sm text-tamu-slate">
+                    Select 2 or 3 saved courses to see the comparison view.
+                  </div>
                 )}
               </div>
             </div>
-
-            <div className="panel rounded-[2rem] border border-white/70 p-6 shadow-panel">
-              <h2 className="display-serif text-3xl text-tamu-maroon">Recent searches</h2>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {history.length ? (
-                  history.map((item) => (
-                    <button
-                      key={item}
-                      type="button"
-                      onClick={() => applySuggestion(item)}
-                      className="rounded-full border border-tamu-maroon/12 bg-white px-3 py-2 text-xs text-tamu-slate transition hover:border-tamu-maroon hover:text-tamu-maroon"
-                    >
-                      {item}
-                    </button>
-                  ))
-                ) : (
-                  <p className="text-sm text-tamu-slate">Your search history will appear here.</p>
-                )}
-              </div>
-            </div>
-          </aside>
-
-          <section className="space-y-6">
-            {topResult && !loading && !error ? <SpotlightCard topResult={topResult} query={lastQuery} /> : null}
-
-            {searchMeta?.message && results.length > 0 && !loading && !error ? (
-              <div className="flex flex-col gap-4 rounded-3xl border border-tamu-maroon/15 bg-white/80 px-5 py-4 text-sm text-tamu-slate md:flex-row md:items-center md:justify-between">
-                <div>{searchMeta.message}</div>
-                <button
-                  type="button"
-                  onClick={handleDownloadPdf}
-                  className="rounded-2xl bg-tamu-maroon px-4 py-3 text-sm font-semibold text-white transition hover:bg-tamu-maroon-dark"
-                >
-                  Download course list PDF
-                </button>
-              </div>
-            ) : null}
-
-            {error ? (
-              <div className="rounded-3xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">{error}</div>
-            ) : null}
-
-            {loading ? <LoadingState /> : null}
-
-            {!loading && !error && results.length === 0 && lastQuery ? (
-              <EmptyState query={lastQuery} onSuggestion={applySuggestion} />
-            ) : null}
-
-            {!loading && !lastQuery ? (
-              <div className="panel rounded-[2rem] border border-white/70 px-6 py-10 shadow-panel">
-                <h2 className="display-serif text-3xl text-tamu-maroon">Start with a research direction</h2>
-                <p className="mt-3 max-w-3xl text-tamu-slate">
-                  Search by problem area, technique, or application domain. CourseConnect works best with intent-rich
-                  prompts such as `large-scale optimization for machine learning` or `wireless mobile systems`.
-                </p>
-              </div>
-            ) : null}
-
-            <div className="space-y-5">
-              {results.map((result) => (
-                <SearchResultCard
-                  key={result.code}
-                  result={result}
-                  query={lastQuery}
-                  isSaved={savedCodes.has(result.code)}
-                  onToggleSave={toggleSavedCourse}
-                />
-              ))}
-            </div>
-          </section>
-        </main>
+          ) : null}
+        </section>
       </div>
     </div>
   );
