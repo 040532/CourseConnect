@@ -22,3 +22,12 @@ class CourseResponse(CourseBase):
 class SearchResult(CourseBase):
     department: str
     score: float
+
+
+class SearchResponse(BaseModel):
+    results: list[SearchResult]
+    returned_count: int
+    max_results: int
+    applied_threshold: float
+    top_score: Optional[float] = None
+    message: str

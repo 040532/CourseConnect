@@ -3,11 +3,11 @@
 @tailwind utilities;
 
 :root {
-  color: #172033;
+  color: #201716;
   background:
-    radial-gradient(circle at top left, rgba(173, 124, 47, 0.18), transparent 24rem),
-    radial-gradient(circle at right 20%, rgba(29, 95, 83, 0.14), transparent 22rem),
-    linear-gradient(180deg, #f8f4ed 0%, #f2eee6 100%);
+    radial-gradient(circle at top left, rgba(214, 179, 95, 0.16), transparent 22rem),
+    radial-gradient(circle at 85% 18%, rgba(80, 0, 0, 0.12), transparent 20rem),
+    linear-gradient(180deg, #fbf7f1 0%, #f4ede3 100%);
   font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
 }
 
@@ -25,7 +25,7 @@ body {
 }
 
 .display-serif {
-  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+  font-family: "Baskerville", "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
 }
 
 .line-clamp-4 {
@@ -35,19 +35,26 @@ body {
   -webkit-line-clamp: 4;
 }
 
-.glass-panel {
-  background: rgba(255, 255, 255, 0.76);
-  backdrop-filter: blur(18px);
+.panel {
+  background: rgba(255, 252, 248, 0.78);
+  backdrop-filter: blur(16px);
+}
+
+.hero-panel {
+  background:
+    radial-gradient(circle at top right, rgba(214, 179, 95, 0.26), transparent 18rem),
+    linear-gradient(135deg, #500000 0%, #6a0f12 55%, #7b1f24 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .result-enter {
-  animation: lift-in 500ms ease both;
+  animation: lift-in 420ms ease both;
 }
 
 @keyframes lift-in {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;

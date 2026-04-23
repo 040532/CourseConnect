@@ -51,7 +51,7 @@ class SemanticSearchService:
         department: Optional[str] = None,
         min_credits: Optional[float] = None,
         max_credits: Optional[float] = None,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         artifacts = self.load()
         query_embedding = artifacts.model.encode([query], convert_to_numpy=True, normalize_embeddings=True)
 
@@ -60,7 +60,7 @@ class SemanticSearchService:
         scores, indices = artifacts.index.search(np.asarray(query_embedding, dtype="float32"), search_k)
 
         normalized_department = department.upper() if department else None
-        results: list[dict[str, Any]] = []
+        candidates: list[dict[str, Any]] = []
         query_terms = [term for term in re.findall(r"[A-Za-z0-9]+", query.lower()) if len(term) > 2]
 
         for score, idx in zip(scores[0], indices[0]):
@@ -89,12 +89,42 @@ class SemanticSearchService:
                     "score": round(max(0.0, min(blended_score, 1.0)) * 100, 2),
                 }
             )
-            results.append(item)
+            candidates.append(item)
 
-            if len(results) == top_k:
-                break
+        ranked = sorted(candidates, key=lambda result: result["score"], reverse=True)
+        if not ranked:
+            return {
+                "results": [],
+                "returned_count": 0,
+                "max_results": top_k,
+                "applied_threshold": 0.0,
+                "top_score": None,
+                "message": "No courses matched the current query and filter combination.",
+            }
 
-        return sorted(results, key=lambda result: result["score"], reverse=True)
+        top_score = ranked[0]["score"]
+        applied_threshold = round(max(58.0, top_score - 14.0), 2)
+
+        if top_score < 52.0:
+            return {
+                "results": [],
+                "returned_count": 0,
+                "max_results": top_k,
+                "applied_threshold": applied_threshold,
+                "top_score": top_score,
+                "message": "No sufficiently aligned courses were found. Try broadening the query or removing a filter.",
+            }
+
+        results = [item for item in ranked if item["score"] >= applied_threshold][:top_k]
+
+        return {
+            "results": results,
+            "returned_count": len(results),
+            "max_results": top_k,
+            "applied_threshold": applied_threshold,
+            "top_score": top_score,
+            "message": f"Showing {len(results)} high-confidence matches out of a maximum of {top_k}.",
+        }
 
 
 semantic_search_service = SemanticSearchService()

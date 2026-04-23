@@ -4,23 +4,23 @@ export default {
   theme: {
     extend: {
       colors: {
-        parchment: "#f5f1e8",
-        ink: "#172033",
-        slate: "#4f6273",
-        accent: "#ad7c2f",
-        evergreen: "#1d5f53",
-        roseclay: "#965f5a",
-        mist: "#dde6e3",
+        "tamu-page": "#f8f4ef",
+        "tamu-cream": "#f5ede0",
+        "tamu-stone": "#e8ddd0",
+        "tamu-maroon": "#500000",
+        "tamu-maroon-dark": "#3a0000",
+        "tamu-gold": "#d6b35f",
+        "tamu-gold-dark": "#8b6b2e",
+        "tamu-brick": "#8a4b4b",
+        "tamu-ink": "#201716",
+        "tamu-slate": "#685c58",
+        "tamu-muted": "#8b7d78",
       },
       boxShadow: {
-        panel: "0 20px 45px -24px rgba(23, 32, 51, 0.35)",
+        panel: "0 22px 48px -24px rgba(80, 0, 0, 0.28)",
       },
       borderRadius: {
         "4xl": "2rem",
-      },
-      backgroundImage: {
-        grain:
-          "radial-gradient(circle at 25% 20%, rgba(173, 124, 47, 0.18), transparent 0 24%), radial-gradient(circle at 80% 10%, rgba(29, 95, 83, 0.16), transparent 0 20%), radial-gradient(circle at 50% 80%, rgba(150, 95, 90, 0.14), transparent 0 18%)",
       },
     },
   },

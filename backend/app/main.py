@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from .db import Base, engine, get_db
 from .models import Course
-from .schemas import CourseResponse, SearchResult
+from .schemas import CourseResponse, SearchResponse
 from .search import infer_department, semantic_search_service
 
 
@@ -61,7 +61,7 @@ def get_courses(db: Session = Depends(get_db)):
     return response
 
 
-@app.get("/search", response_model=list[SearchResult])
+@app.get("/search", response_model=SearchResponse)
 def search_courses(
     q: str = Query(..., min_length=2),
     top_k: int = Query(10, ge=1, le=25),
