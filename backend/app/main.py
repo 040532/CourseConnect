@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .db import Base, engine, get_db
 from .models import Course
 from .schemas import CourseResponse, SearchResponse
-from .search import infer_department, semantic_search_service
+from .search import SEARCH_MODES, infer_department, semantic_search_service
 
 
 @asynccontextmanager
@@ -19,7 +19,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="CourseConnect API",
-    description="Semantic graduate course search backed by Sentence-BERT and FAISS.",
+    description="Hybrid (BM25 + Sentence-BERT/FAISS) graduate course search.",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -68,7 +68,10 @@ def search_courses(
     department: Optional[str] = Query(None),
     min_credits: Optional[float] = Query(None, ge=0),
     max_credits: Optional[float] = Query(None, ge=0),
+    mode: str = Query("hybrid", description=f"Retrieval mode: one of {', '.join(SEARCH_MODES)}"),
 ):
+    if mode not in SEARCH_MODES:
+        raise HTTPException(status_code=400, detail=f"mode must be one of {', '.join(SEARCH_MODES)}")
     if not semantic_search_service.is_ready():
         raise HTTPException(
             status_code=503,
@@ -81,5 +84,6 @@ def search_courses(
         department=department,
         min_credits=min_credits,
         max_credits=max_credits,
+        mode=mode,
     )
     return results
