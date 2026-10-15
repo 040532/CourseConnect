@@ -1,8 +1,5 @@
 # CourseConnect
 
-CourseConnect is a full-stack semantic course search engine for graduate students. It lets users search for courses using natural-language interests instead of exact keywords, then returns ranked results using Sentence-BERT embeddings, FAISS similarity search, a FastAPI backend, and a React frontend.
-=======
-
 CourseConnect is a full-stack semantic course search engine for graduate students. Instead of relying on exact keyword matching, it lets users search for courses using natural-language interests such as `deep learning for computer vision`, `distributed cloud systems`, or `privacy in machine learning`, then returns the most relevant graduate courses using Sentence-BERT embeddings and FAISS similarity search.
 
 The system is built around a reproducible pipeline: scrape course data from the Texas A&M graduate catalog, clean and store it in structured formats, generate semantic embeddings, build a persistent vector index, serve results through a FastAPI backend, and present them in a polished React + Tailwind frontend.
@@ -20,8 +17,12 @@ This makes the app especially helpful for:
 
 ## Core Features
 
-- Semantic search powered by `sentence-transformers/all-mpnet-base-v2`
-- FAISS-based cosine similarity retrieval using normalized embeddings
+- Hybrid retrieval: BM25 keyword search + Sentence-BERT (`all-mpnet-base-v2`) dense search over a FAISS index, merged with Reciprocal Rank Fusion
+- Natural-language query handling: conversational filler removal and domain-specific query expansion (applied to keyword search only)
+- Optional cross-encoder reranking (`cross-encoder/ms-marco-MiniLM-L-6-v2`)
+- Filters applied inside the FAISS search, so narrow department or credit filters never return empty pages
+- Built-in evaluation harness (Precision@5, Recall@10, MRR@10, nDCG@10) on a hand-labeled query set
+- Unit tests for retrieval logic that run without downloading any model
 - Python scraper for the Texas A&M graduate course catalog
 - Structured persistence in JSON, CSV, and SQLite
 - FastAPI backend with CORS enabled for local frontend development
@@ -211,7 +212,8 @@ This script:
 
 - loads cleaned course records
 - combines title and description text
-- generates embeddings with `all-mpnet-base-v2`
+- removes duplicate course records (one entry per course code)
+- generates embeddings with `all-mpnet-base-v2` from `code + title + description`
 - normalizes embeddings for cosine-style similarity search
 - builds and saves a FAISS index for reuse
 
@@ -243,6 +245,43 @@ The frontend will be available at:
 
 - [http://localhost:3000](http://localhost:3000)
 
+## How Search Works
+
+1. **Query cleanup.** Conversational filler such as *"what courses should I take for ..."* is stripped, keeping the topic words.
+2. **Dense retrieval.** The cleaned query is embedded with `all-mpnet-base-v2` and searched against the normalized course embeddings in FAISS (cosine similarity). The query is embedded *without* keyword expansion so its meaning is not diluted.
+3. **Keyword retrieval.** BM25 scores `code + title + description`, using the cleaned query plus domain expansions (for example `ai` becomes `artificial intelligence machine learning deep learning`). Expansion improves keyword recall without distorting the dense vector.
+4. **Reciprocal Rank Fusion.** The two ranked lists are merged with RRF (`score = Σ 1 / (60 + rank)`). RRF uses ranks only, so BM25 and cosine scores never need hand-tuned weights.
+5. **Optional reranking.** `mode=hybrid_rerank` rescores the top 30 fused candidates with a cross-encoder that reads the query and course text together.
+6. **Confidence gate.** If no candidate reaches a minimum semantic similarity, the API reports that nothing matched instead of returning keyword-only noise.
+
+Other modes (`dense`, `bm25`, `legacy`) are kept so each approach can be measured on the same labeled queries. `legacy` reproduces the original search (expanded query embedded, plus a substring keyword bonus).
+
+## Evaluating Search Quality
+
+Search changes are measured, not guessed. The evaluation set lives in `eval/`:
+
+- `eval/queries.txt`: realistic student queries, one per line
+- `eval/labels.csv`: pooled candidate courses per query, hand-labeled `relevant` = 1 or 0
+- `eval/results.md`: the latest metrics table
+
+Workflow:
+
+```bash
+python scripts/make_label_sheet.py   # pools top results from every mode into eval/labels.csv
+# open eval/labels.csv and mark each row relevant = 1 or 0
+python scripts/evaluate.py           # compares legacy, dense, bm25 and hybrid
+python scripts/evaluate.py --modes hybrid hybrid_rerank   # test the cross-encoder
+```
+
+Metrics: **P@5** (share of the top 5 that are relevant), **R@10** (share of known relevant courses found in the top 10), **MRR@10** (how early the first relevant course appears) and **nDCG@10** (rewards ranking relevant courses higher). Unlabeled courses count as not relevant, which is standard for pooled evaluation.
+
+Run the unit tests (no model download needed):
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest tests
+```
+
 ## API Endpoints
 
 ### `GET /health`
@@ -263,7 +302,7 @@ Example:
 
 ### `GET /search`
 
-Runs semantic search over the FAISS index.
+Runs hybrid search (BM25 + FAISS dense retrieval, fused with Reciprocal Rank Fusion).
 
 Query parameters:
 
@@ -272,6 +311,7 @@ Query parameters:
 - `department` optional subject filter such as `CSCE`
 - `min_credits` optional minimum credit filter
 - `max_credits` optional maximum credit filter
+- `mode` optional retrieval mode: `hybrid` (default), `hybrid_rerank`, `dense`, `bm25`, or `legacy`
 
 Examples:
 
