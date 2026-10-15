@@ -4,7 +4,6 @@ import sys
 
 import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
@@ -18,6 +17,7 @@ from backend.app.config import (
     INDEX_METADATA_PATH,
     MODEL_NAME,
 )
+from backend.app.search import course_text
 
 
 def ensure_index_dir() -> None:
@@ -30,14 +30,28 @@ def load_courses() -> list[dict]:
     return json.loads(COURSES_JSON_PATH.read_text(encoding="utf-8"))
 
 
-def combined_text(course: dict) -> str:
-    return f"{course['title']}. {course['description']}"
+def deduplicate(courses: list[dict]) -> list[dict]:
+    """Keep one record per course code (the catalog can list a course under several pages)."""
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for course in courses:
+        code = " ".join((course.get("code") or "").upper().split())
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        unique.append(course)
+    return unique
 
 
 def main() -> None:
     ensure_index_dir()
-    courses = load_courses()
-    texts = [combined_text(course) for course in courses]
+    raw_courses = load_courses()
+    courses = deduplicate(raw_courses)
+    if len(courses) != len(raw_courses):
+        print(f"Removed {len(raw_courses) - len(courses)} duplicate course records.")
+    texts = [course_text(course) for course in courses]
+
+    from sentence_transformers import SentenceTransformer
 
     model = SentenceTransformer(MODEL_NAME)
     embeddings = model.encode(texts, convert_to_numpy=True, show_progress_bar=True, normalize_embeddings=True)
