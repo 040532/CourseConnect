@@ -1,0 +1,23 @@
+# One search query per line. These are starter examples; edit or replace them so
+# they reflect how real students search. Aim for ~20 varied queries: short
+# keywords, natural-language questions, and cross-department interests.
+machine learning for healthcare
+what courses should I take to learn about deep learning
+distributed systems and cloud computing
+computer vision
+public health statistics
+renewable energy systems
+animal nutrition
+privacy and security in machine learning
+natural language processing
+robotics and autonomous systems
+data visualization
+bioinformatics and genomics
+financial risk management
+technical writing for engineers
+reinforcement learning
+database systems
+epidemiology methods
+water resources engineering
+i'm interested in human computer interaction
+optimization methods for engineering
